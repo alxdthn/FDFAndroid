@@ -2,5 +2,7 @@
 <resources>
 	<declare-styleable name="FdfView">
 		<attr name="file" format="string"/>
+		<attr name="colorTop" format="color"/>
+		<attr name="colorBottom" format="color"/>
 	</declare-styleable>
 </resources>

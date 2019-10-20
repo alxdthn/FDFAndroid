@@ -3,7 +3,8 @@ package com.alxdthn.android_fdf
 class Render(
 	var x: Float,
 	var y: Float,
-	var z: Float
+	var z: Float,
+	var color: Int
 )
 
 class Vertex(

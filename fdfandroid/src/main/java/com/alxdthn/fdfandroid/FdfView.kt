@@ -6,10 +6,9 @@ import android.graphics.*
 import android.util.AttributeSet
 import android.view.*
 import androidx.core.content.ContextCompat
-import com.alxdthn.android_fdf.Render
-import com.alxdthn.android_fdf.Vertex
 import java.io.IOException
 import java.io.InputStream
+import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.max
 import kotlin.math.sin
@@ -22,7 +21,6 @@ class FdfView: View {
 	private val paint = Paint()
 	private val map = mutableListOf<MutableList<Vertex>>()
 	private val print = mutableListOf<Vertex>()
-	private val printQuery = mutableListOf<Vertex>()
 	private lateinit var scaleGestureDetector: ScaleGestureDetector
 	private lateinit var gestureDetector: GestureDetector
 
@@ -30,14 +28,9 @@ class FdfView: View {
 	private var winHeight = 0f
 	private var sideSize = 0f
 
-	private var colorTop = 0
-	private var colorBottom = 0
-
 	private var scaleFactor = 1f
-	//private var angleX = 0.523599f
-//	private var angleY = 0.523599f
-	private var angleX = 0f
-	private var angleY = 0f
+	private var angleX = 0.523599f
+	private var angleY = 0.523599f
 	private var angleZ = 0f
 	private var maxZ: Float? = null
 
@@ -51,6 +44,8 @@ class FdfView: View {
 
 	lateinit var file: String
 	private lateinit var input: String
+	var colorTop = 0
+	var colorBottom = 0
 
 	constructor(context: Context): super(context) {
 		init(context)
@@ -61,7 +56,11 @@ class FdfView: View {
 
 		val typedArray = context.obtainStyledAttributes(attrs, R.styleable.FdfView, defStyle, 0)
 
-		file = typedArray.getString(R.styleable.FdfView_file) ?: ""
+		typedArray.apply {
+			file = getString(R.styleable.FdfView_file) ?: ""
+			colorTop = getColor(R.styleable.FdfView_colorTop, 0)
+			colorBottom = getColor(R.styleable.FdfView_colorBottom, 0)
+		}
 		typedArray.recycle()
 
 		init(context)
@@ -116,7 +115,7 @@ class FdfView: View {
 				} else if (maxZ != null && value > maxZ!!) {
 					maxZ = value
 				}
-				val vertex = Vertex(xCounter++, yCounter, value, Render(0f, 0f, 0f), mutableListOf(), false)
+				val vertex = Vertex(xCounter++, yCounter, value, Render(0f, 0f, 0f, 0), mutableListOf(), false)
 				vertexRow.add(vertex)
 			}
 			yCounter++
@@ -208,6 +207,7 @@ class FdfView: View {
 		}
 		vertex.render.x = winWidth / 2f + vertex.render.x
 		vertex.render.y = winHeight / 2f - vertex.render.y
+		vertex.render.color = if (vertex.z == 0f) colorBottom else colorTop
 	}
 
 	private fun rotateY(render: Render) {
@@ -254,7 +254,7 @@ class FdfView: View {
 		for (vertex in print) {
 			for (connection in vertex.connections) {
 				if (!connection.isPrinted) {
-					drawLine(canvas, vertex, connection)
+					bresenhem(canvas, vertex.render, connection.render)
 				}
 			}
 			vertex.isPrinted = true
@@ -264,24 +264,60 @@ class FdfView: View {
 		}
 	}
 
-	private fun drawLine(canvas: Canvas, a: Vertex, b: Vertex) {
-		when {
-			a.z == b.z -> {
-				paint.shader = null
-				paint.color = if (a.z > 0) {
-					Color.RED
-				} else {
-					Color.CYAN
-				}
+	private fun bresenhem(canvas: Canvas, p1: Render, p2: Render) {
+		val deltaX = abs(p2.x - p1.x)
+		val deltaY = abs(p2.y - p1.y)
+		var error = deltaX - deltaY
+		var error2: Float
+		val point = Render(p1.x, p1.y, p1.z, p1.color)
+		val dirX = if (p1.x < p2.x) 1f else -1f
+		val dirY = if (p1.y < p2.y) 1f else -1f
+
+		while (point.x <= p2.x || point.y <= p2.y) {
+			setPixel(canvas, point, p1, p2, deltaX, deltaY)
+			error2 = error * 2
+			if (error > -deltaY) {
+				error -= deltaY
+				point.x += dirX
+			} else if (error2 < deltaX) {
+				error += deltaX
+				point.y += dirY
 			}
-			a.z > b.z -> paint.shader = LinearGradient(
-				a.render.x, a.render.y, b.render.x, b.render.y, Color.RED, Color.CYAN, Shader.TileMode.MIRROR
-			)
-			else -> paint.shader = LinearGradient(
-				a.render.x, a.render.y, b.render.x, b.render.y, Color.CYAN, Color.RED, Shader.TileMode.MIRROR
-			)
 		}
-		canvas.drawLine(a.render.x, a.render.y, b.render.x, b.render.y, paint)
+	}
+
+	private fun setPixel(canvas: Canvas, point: Render, start: Render, end: Render, deltaX: Float, deltaY: Float) {
+		point.color = getGradient(point, start, end, deltaX, deltaY)
+
+		paint.color = point.color
+		canvas.drawPoint(point.x, point.y, paint)
+	}
+
+	private fun getGradient(point: Render, start: Render, end: Render, deltaX: Float, deltaY: Float): Int {
+		if (point.color == end.color) {
+			return point.color
+		}
+		val percent = if (deltaX > deltaY) {
+			percentage(start.x, end.x, point.x)
+		}
+		else {
+			percentage(start.y, end.y, point.y)
+		}
+		val red = getLight((start.color shr 16) and 0xFF, (end.color shr 16) and 0xFF, percent)
+		val green = getLight((start.color shr 8) and 0xFF, (end.color shr 8) and 0xFF, percent)
+		val blue = getLight(start.color and 0xFF, end.color and 0xFF, percent)
+		return (red shl 16) or (green shl 8) or blue
+	}
+
+	private fun percentage(start: Float, end: Float, cur: Float): Float {
+		val placement = cur - start
+		val distance = end - start
+
+		return if (distance == 0f) 1.0f else placement / distance
+	}
+
+	private fun getLight(start: Int, end: Int, percent: Float): Int {
+		return ((1 - percent) * start + percent * end).toInt()
 	}
 
 	@SuppressLint("ClickableViewAccessibility")
