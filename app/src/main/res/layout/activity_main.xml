@@ -13,11 +13,4 @@
 		android:layout_height="match_parent"
 		android:background="@color/black"
 		app:file="42.fdf"/>
-
-	<Button
-		android:id="@+id/btn"
-		android:layout_width="wrap_content"
-		android:layout_height="wrap_content"
-		app:layout_constraintBottom_toBottomOf="parent"
-		app:layout_constraintEnd_toEndOf="parent" />
 </androidx.constraintlayout.widget.ConstraintLayout>
